@@ -1,0 +1,10 @@
+# Add any directories, files, or patterns you don't want to be tracked by version control
+.DS_Store
+/Python/.idea/
+/tmp/
+*/.ipynb_checkpoints/*
+__pycache__/
+log_*.txt
+README_curated.txt
+README_ctd.txt
+.venv/*
