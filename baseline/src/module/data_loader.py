@@ -70,7 +70,7 @@ def preprocess(data_entry, tokenizer, max_text_length, relation_map, lower=True)
     # [CLS] --> 101, [PAD] --> 0, [SEP] --> 102, [UNK] --> 100
 
     text = unidecode.unidecode(text)
-    tokens = tokenizer.tokenize(text)[:(max_text_length-2)]
+    tokens = tokenizer.tokenize(text, padding='max_length', max_length=max_text_length)[:(max_text_length-2)]
     tokens = [cls_token] + tokens + [sep_token]
     token_wids = tokenizer.convert_tokens_to_ids(tokens)
     text = cls_token + " " + text + " " + sep_token
