@@ -184,12 +184,11 @@ class Model(nn.Module):
         output = torch.transpose(output, 2, 3)
         return output
 
-    def forward(self, input_ids, attention_mask, ep_mask, e1_indicator, e2_indicator):
+    def forward(self, input_ids, attention_mask):
         # input_ids: (batchsize, text_length)
         # attention_mask: (batchsize, text_length)
         # ep_mask: (batchsize, num_ep, text_length, text_length)
-        # e1_indicator: not used
-        # e2_indicator: not used
+
         if self.config["encoder_type"] == "transformer_conv":
             h = self.encoder(input_ids=input_ids.long(),
                              attention_mask=attention_mask.long())
@@ -209,11 +208,11 @@ class Model(nn.Module):
             # pairwise_scores = torch.nn.functional.softmax(pairwise_scores, dim=3)
             # # above line Commented, was used in original Bran code: https://github.com/patverga/bran/blob/32378da8ac339393d9faa2ff2d50ccb3b379e9a2/src/models/transformer.py#L468
             # (batchsize, num_ep, text_length, text_length, 1)
-            ep_mask = ep_mask.unsqueeze(4)
+            #ep_mask = ep_mask.unsqueeze(4)
             # batchsize, num_ep, text_length, text_length, R + 1
-            pairwise_scores = pairwise_scores + ep_mask
-            pairwise_scores = torch.logsumexp(
-                pairwise_scores, dim=[2, 3])  # batchsize, num_ep, R + 1
+            pairwise_scores = pairwise_scores# + ep_mask
+            #pairwise_scores = torch.logsumexp(
+            #    pairwise_scores, dim=[2, 3])  # batchsize, num_ep, R + 1
 
         elif self.config["model"] == "dot":
             # (batchsize, num_ep, text_length, 1)
@@ -236,8 +235,8 @@ class Model(nn.Module):
                 self.relu(self.layer1(torch.cat([e1_vec, e2_vec], 2))))  # (batchsize, num_ep, 2D)
             pairwise_scores = self.layer2(e1e2_vec)  # (batchsize, num_ep, R+1)
 
-        if self.multi_label == True:
+        #if self.multi_label == True:
             # (batchsize, num_ep, R)
-            pairwise_scores = pairwise_scores[:, :, :-1]
+            #pairwise_scores = pairwise_scores[:, :, :-1]
 
         return pairwise_scores
