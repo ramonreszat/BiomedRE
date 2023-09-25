@@ -463,7 +463,7 @@ class Dataloader(object):
             # relationship encodings (N, max_num_eps, R)
             label_arrays = torch.tensor(np.array(padded_label_arrays), dtype=torch.float32)
 
-            # masking entity-pair relationships
+            # masking pairwise relationship scores
             ep_masks = torch.tensor(np.array(padded_ep_masks), dtype=torch.float)
 
             # entity-pair indicators for the relationship extraction model
