@@ -413,14 +413,14 @@ class Dataloader(object):
                 self._idx = 0
             batch = self.train[self._idx:(self._idx+self._bz)]#[0]
             self._idx += self._bz
-            label_array, ep_masks, e1_indicators, e2_indicators = [], [], [], []
-            input_lengths = []
+
             # title and abstract padded to max_input_length
             input_array = [data["input"] for data in batch]
             pad_array = [data["pad"] for data in batch]
+            # keep track of varying sequence lengths
             input_lengths = [data["input_length"] for data in batch]
 
-            # annotations of biochemical relations in the text
+            # annotations for biochemical relations in the text
             label_arrays = [np.array(data["label_vectors"]) for data in batch]
             e1_indicators = [data["e1_indicators"] for data in batch]
             e2_indicators = [data["e2_indicators"] for data in batch]
@@ -456,23 +456,22 @@ class Dataloader(object):
                 padded_label_arrays_ = np.concatenate((label_array, label_padding))
                 padded_label_arrays.append(padded_label_arrays_)
 
-            max_length = int(np.max(input_lengths))
-            # input sequence (N, max_text_length)
+            # input sequences (N, max_length)
             input_ids = torch.tensor(np.array(input_array), dtype=torch.long)
-            attention_mask = torch.tensor(np.array(pad_array), dtype=torch.long)
-
-            # 
-            ep_masks = torch.tensor(np.array(padded_ep_masks)[
-                :, :, :max_length, :max_length], dtype=torch.float)
-            # ERROR: TypeError: can't convert np.ndarray of type numpy.object_.
+            attention_masks = torch.tensor(np.array(pad_array), dtype=torch.long)
+            
+            # relationship encodings (N, max_num_eps, R)
             label_arrays = torch.tensor(np.array(padded_label_arrays), dtype=torch.float32)
-       
-            # indicators for the entity pairs that ...
+
+            # masking entity-pair relationships
+            ep_masks = torch.tensor(np.array(padded_ep_masks), dtype=torch.float)
+
+            # entity-pair indicators for the relationship extraction model
             e1_indicators = [np.array(e1_indicators_) for e1_indicators_ in e1_indicators]
             e2_indicators = [np.array(e2_indicators_) for e2_indicators_ in e2_indicators]
 
             self.num_trained_data += self._bz
 
-            return_data = (input_ids, attention_mask, ep_masks,
+            return_data = (input_ids, attention_masks, ep_masks,
                            e1_indicators, e2_indicators, label_arrays)
             yield self.num_trained_data, return_data
