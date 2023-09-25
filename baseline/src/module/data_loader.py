@@ -386,6 +386,7 @@ class Dataloader(object):
                     f"          {rel_name}: # of labels = {per_rel_stat[rel_name]}")
             self.logger.info(f"=======================================")
 
+        self.num_ep_relations = 14
         self.max_text_length = max_text_length
         self.max_num_eps = max_eps
         self._bz = batch_size
@@ -420,7 +421,7 @@ class Dataloader(object):
             input_lengths = [data["input_length"] for data in batch]
 
             # annotations of biochemical relations in the text
-            label_array = [np.array(data["label_vectors"]) for data in batch]
+            label_arrays = [np.array(data["label_vectors"]) for data in batch]
             e1_indicators = [data["e1_indicators"] for data in batch]
             e2_indicators = [data["e2_indicators"] for data in batch]
 
@@ -441,26 +442,37 @@ class Dataloader(object):
             padded_ep_masks = []
             for i, ep_mask in enumerate(ep_masks):
                 padding_size = self.max_num_eps - ep_mask.shape[0]
-                padding = np.full(
+                ep_padding = np.full(
                         (padding_size, self.max_text_length, self.max_text_length), -1e20)
-                padded_ep_masks_ = np.concatenate((ep_mask, padding))
+                padded_ep_masks_ = np.concatenate((ep_mask, ep_padding))
                 padded_ep_masks.append(padded_ep_masks_)
 
+            # (max_num_eps, R)
+            padded_label_arrays = []
+            for i, label_array in enumerate(label_arrays):
+                padding_size = self.max_num_eps - label_array.shape[0]
+                label_padding = np.full(
+                        (padding_size, self.num_ep_relations), 0.0, dtype=np.float32)
+                padded_label_arrays_ = np.concatenate((label_array, label_padding))
+                padded_label_arrays.append(padded_label_arrays_)
+
             max_length = int(np.max(input_lengths))
+            # input sequence (N, max_text_length)
             input_ids = torch.tensor(np.array(input_array), dtype=torch.long)
             attention_mask = torch.tensor(np.array(pad_array), dtype=torch.long)
-            #label_array = torch.tensor(np.array(label_array), dtype=torch.float)
+
+            # 
             ep_masks = torch.tensor(np.array(padded_ep_masks)[
                 :, :, :max_length, :max_length], dtype=torch.float)
-            #e1_indicators = np.array(e1_indicators)
-            #e2_indicators = np.array(e2_indicators)
-            #e1_indicators = torch.tensor(e1_indicators[
-            #    :, :, :max_length], dtype=torch.float)
-            #e2_indicators = torch.tensor(e2_indicators[
-            #    :, :, :max_length], dtype=torch.float)
+            # ERROR: TypeError: can't convert np.ndarray of type numpy.object_.
+            label_arrays = torch.tensor(np.array(padded_label_arrays), dtype=torch.float32)
+       
+            # indicators for the entity pairs that ...
+            e1_indicators = [np.array(e1_indicators_) for e1_indicators_ in e1_indicators]
+            e2_indicators = [np.array(e2_indicators_) for e2_indicators_ in e2_indicators]
 
             self.num_trained_data += self._bz
 
             return_data = (input_ids, attention_mask, ep_masks,
-                           e1_indicators, e2_indicators, label_array)
+                           e1_indicators, e2_indicators, label_arrays)
             yield self.num_trained_data, return_data
