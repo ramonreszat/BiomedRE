@@ -166,7 +166,7 @@ def preprocess(data_entry, tokenizer, max_text_length, relation_map, lower=True)
 class Dataloader(object):
     """Dataloader"""
 
-    def __init__(self, data_path, tokenizer, seed=0, max_text_length=512, training=False, logger=None, lowercase=True):
+    def __init__(self, data_path, tokenizer, seed=0, batch_size=1, max_text_length=512, max_eps=100, training=False, logger=None, lowercase=True):
         # shape of input for each batch: (batchsize, max_text_length, max_sent_length)
         self.train = []
         self.val = []
@@ -387,7 +387,8 @@ class Dataloader(object):
             self.logger.info(f"=======================================")
 
         self.max_text_length = max_text_length
-        self._bz = 2
+        self.max_num_eps = max_eps
+        self._bz = batch_size
         self._datasize = len(self.train)
         self._idx = 0
         self.num_trained_data = 0
@@ -423,7 +424,7 @@ class Dataloader(object):
             e1_indicators = [data["e1_indicators"] for data in batch]
             e2_indicators = [data["e2_indicators"] for data in batch]
 
-            # (text_length, text_length)
+            # (num_eps, text_length, text_length)
             ep_masks = []
             for e1_indicators_, e2_indicators_ in zip(e1_indicators, e2_indicators):
                 ep_masks_ = []
@@ -436,14 +437,21 @@ class Dataloader(object):
                 ep_masks_ = np.array(ep_masks_)
                 ep_masks.append(ep_masks_)
 
-            # TODO: padding ep_masks to max_num_eps
+            # (max_num_eps, text_length, text_length)
+            padded_ep_masks = []
+            for i, ep_mask in enumerate(ep_masks):
+                padding_size = self.max_num_eps - ep_mask.shape[0]
+                padding = np.full(
+                        (padding_size, self.max_text_length, self.max_text_length), -1e20)
+                padded_ep_masks_ = np.concatenate((ep_mask, padding))
+                padded_ep_masks.append(padded_ep_masks_)
 
-            #max_length = int(np.max(input_lengths))
+            max_length = int(np.max(input_lengths))
             input_ids = torch.tensor(np.array(input_array), dtype=torch.long)
             attention_mask = torch.tensor(np.array(pad_array), dtype=torch.long)
             #label_array = torch.tensor(np.array(label_array), dtype=torch.float)
-            #ep_masks = torch.tensor(
-            #    np.array(ep_masks)[:, :, :max_length, :max_length], dtype=torch.float)
+            ep_masks = torch.tensor(np.array(padded_ep_masks)[
+                :, :, :max_length, :max_length], dtype=torch.float)
             #e1_indicators = np.array(e1_indicators)
             #e2_indicators = np.array(e2_indicators)
             #e1_indicators = torch.tensor(e1_indicators[
