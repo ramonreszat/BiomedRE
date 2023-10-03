@@ -75,10 +75,10 @@ def preprocess(data_entry, tokenizer, max_text_length, relation_map, lower=True)
     token_wids = tokenizer.convert_tokens_to_ids(tokens)
     text = cls_token + " " + text + " " + sep_token
 
-    input_array = np.ones(max_text_length, dtype=np.int) * int(padid)
+    input_array = np.ones(max_text_length, dtype=np.int32) * int(padid)
     input_length = len(token_wids)
     input_array[0:len(token_wids)] = token_wids
-    pad_array = np.array(input_array != padid, dtype=np.long)
+    pad_array = np.array(input_array != padid, dtype=np.int64)
 
     ind_map = map_index(text, tokens)
 
