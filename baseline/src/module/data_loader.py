@@ -70,7 +70,7 @@ def preprocess(data_entry, tokenizer, max_text_length, relation_map, lower=True)
     # [CLS] --> 101, [PAD] --> 0, [SEP] --> 102, [UNK] --> 100
 
     text = unidecode.unidecode(text)
-    tokens = tokenizer.tokenize(text, padding='max_length', max_length=max_text_length)[:(max_text_length-2)]
+    tokens = tokenizer.tokenize(text)[:(max_text_length-2)]
     tokens = [cls_token] + tokens + [sep_token]
     token_wids = tokenizer.convert_tokens_to_ids(tokens)
     text = cls_token + " " + text + " " + sep_token
@@ -166,7 +166,7 @@ def preprocess(data_entry, tokenizer, max_text_length, relation_map, lower=True)
 class Dataloader(object):
     """Dataloader"""
 
-    def __init__(self, data_path, tokenizer, seed=0, batch_size=1, max_text_length=512, max_eps=100, training=False, logger=None, lowercase=True):
+    def __init__(self, data_path, tokenizer, seed=0, max_text_length=512, training=False, logger=None, lowercase=True):
         # shape of input for each batch: (batchsize, max_text_length, max_sent_length)
         self.train = []
         self.val = []
@@ -386,10 +386,8 @@ class Dataloader(object):
                     f"          {rel_name}: # of labels = {per_rel_stat[rel_name]}")
             self.logger.info(f"=======================================")
 
-        self.num_ep_relations = 14
         self.max_text_length = max_text_length
-        self.max_num_eps = max_eps
-        self._bz = batch_size
+        self._bz = 1
         self._datasize = len(self.train)
         self._idx = 0
         self.num_trained_data = 0
@@ -411,67 +409,57 @@ class Dataloader(object):
             if self._idx + self._bz > self._datasize:
                 random.shuffle(self.train)
                 self._idx = 0
-            batch = self.train[self._idx:(self._idx+self._bz)]#[0]
+            data = self.train[self._idx:(self._idx+self._bz)][0]
             self._idx += self._bz
+            input_array, pad_array, label_array, ep_masks, e1_indicators, e2_indicators = [
+            ], [], [], [], [], []
+            input_lengths = []
+            input_array.append(data["input"])
+            pad_array.append(data["pad"])
+            input_lengths.append(data["input_length"])
 
-            # title and abstract padded to max_input_length
-            input_array = [data["input"] for data in batch]
-            pad_array = [data["pad"] for data in batch]
-            # keep track of varying sequence lengths
-            input_lengths = [data["input_length"] for data in batch]
+            if len(data["label_vectors"]) > 100:
+                shuffle_indexes = np.arange(len(data["label_vectors"]))
+                np.random.shuffle(shuffle_indexes)
+                shuffle_indexes = shuffle_indexes[:100]
+            else:
+                shuffle_indexes = np.arange(len(data["label_vectors"]))
 
-            # annotations for biochemical relations in the text
-            label_arrays = [np.array(data["label_vectors"]) for data in batch]
-            e1_indicators = [data["e1_indicators"] for data in batch]
-            e2_indicators = [data["e2_indicators"] for data in batch]
+            label_array_ = np.array(data["label_vectors"])[shuffle_indexes]
+            label_array.append(label_array_)
+            e1_indicators_ = np.array(data["e1_indicators"])[shuffle_indexes]
+            e1_indicators.append(e1_indicators_)
+            e2_indicators_ = np.array(data["e2_indicators"])[shuffle_indexes]
+            e2_indicators.append(e2_indicators_)
+            # (text_length, text_length)
+            ep_masks_ = []
+            for e1_indicator, e2_indicator in list(zip(list(e1_indicators_), list(e2_indicators_))):
+                ep_mask_ = np.full(
+                    (self.max_text_length, self.max_text_length), -1e20)
+                ep_outer = 1 - np.outer(e1_indicator, e2_indicator)
+                ep_mask_ = ep_mask_ * ep_outer
+                ep_masks_.append(ep_mask_)
+            ep_masks_ = np.array(ep_masks_)
+            ep_masks.append(ep_masks_)
 
-            # (num_eps, text_length, text_length)
-            ep_masks = []
-            for e1_indicators_, e2_indicators_ in zip(e1_indicators, e2_indicators):
-                ep_masks_ = []
-                for e1_indicator, e2_indicator in list(zip(list(e1_indicators_), list(e2_indicators_))):
-                    ep_mask_ = np.full(
-                        (self.max_text_length, self.max_text_length), -1e20)
-                    ep_outer = 1 - np.outer(e1_indicator, e2_indicator)
-                    ep_mask_ = ep_mask_ * ep_outer
-                    ep_masks_.append(ep_mask_)
-                ep_masks_ = np.array(ep_masks_)
-                ep_masks.append(ep_masks_)
-
-            # (max_num_eps, text_length, text_length)
-            padded_ep_masks = []
-            for i, ep_mask in enumerate(ep_masks):
-                padding_size = self.max_num_eps - ep_mask.shape[0]
-                ep_padding = np.full(
-                        (padding_size, self.max_text_length, self.max_text_length), -1e20)
-                padded_ep_masks_ = np.concatenate((ep_mask, ep_padding))
-                padded_ep_masks.append(padded_ep_masks_)
-
-            # (max_num_eps, R)
-            padded_label_arrays = []
-            for i, label_array in enumerate(label_arrays):
-                padding_size = self.max_num_eps - label_array.shape[0]
-                label_padding = np.full(
-                        (padding_size, self.num_ep_relations), 0.0, dtype=np.float32)
-                padded_label_arrays_ = np.concatenate((label_array, label_padding))
-                padded_label_arrays.append(padded_label_arrays_)
-
-            # input sequences (N, max_length)
-            input_ids = torch.tensor(np.array(input_array), dtype=torch.long)
-            attention_masks = torch.tensor(np.array(pad_array), dtype=torch.long)
-            
-            # relationship encodings (N, max_num_eps, R)
-            label_arrays = torch.tensor(np.array(padded_label_arrays), dtype=torch.float32)
-
-            # masking pairwise relationship scores
-            ep_masks = torch.tensor(np.array(padded_ep_masks), dtype=torch.float)
-
-            # entity-pair indicators for the relationship extraction model
-            e1_indicators = [np.array(e1_indicators_) for e1_indicators_ in e1_indicators]
-            e2_indicators = [np.array(e2_indicators_) for e2_indicators_ in e2_indicators]
+            max_length = int(np.max(input_lengths))
+            input_ids = torch.tensor(np.array(input_array)[
+                                     :, :max_length], dtype=torch.long)
+            attention_mask = torch.tensor(
+                np.array(pad_array)[:, :max_length], dtype=torch.long)
+            label_array = torch.tensor(
+                np.array(label_array), dtype=torch.float)
+            ep_masks = torch.tensor(
+                np.array(ep_masks)[:, :, :max_length, :max_length], dtype=torch.float)
+            e1_indicators = np.array(e1_indicators)
+            e2_indicators = np.array(e2_indicators)
+            e1_indicators = torch.tensor(e1_indicators[
+                :, :, :max_length], dtype=torch.float)
+            e2_indicators = torch.tensor(e2_indicators[
+                :, :, :max_length], dtype=torch.float)
 
             self.num_trained_data += self._bz
 
-            return_data = (input_ids, attention_masks, ep_masks,
-                           e1_indicators, e2_indicators, label_arrays)
+            return_data = (input_ids, attention_mask, ep_masks,
+                           e1_indicators, e2_indicators, label_array)
             yield self.num_trained_data, return_data
