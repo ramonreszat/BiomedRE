@@ -1,0 +1,110 @@
+---
+title: "Biomedical Knowledge Mining"
+output: html_document
+date: "2023-10-17"
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(RCy3) # RCy3 package for interfacing with Cytoscape
+library(igraph) # analyse network structures and graphs
+library(DOSE) # Disease Ontology Semantic and Enrichment analysis
+library(enrichplot) # handy visuals barplot, cnetplot, enrichmap
+```
+
+```{r cytoscape}
+getNetworkList()
+```
+
+## Diseases
+
+```{r enrichment}
+
+# Create an igraph object from the Cytoscape network
+clusters <- createIgraphFromNetwork("GLay Community Cluster--Full Network")
+
+# Get the '__glayCluster' attribute values
+glayCluster <- vertex_attr(clusters, name = "__glayCluster")
+
+# Node type can be chemical, gene or disease
+nodeLabel <- vertex_attr(clusters, name = "node_label")
+
+# Genes that are reported to be up- or downregulated 
+de <- V(clusters)$name[(glayCluster == 9) & (nodeLabel == "Gene")]
+
+# Over-representation DisGeNet
+results <- enrichDGN(de)
+```
+
+```{r}
+# adjusted log p-values
+qvalues <- -log(results$p.adjust, base=10)
+
+# enrichplot
+barplot(results, x="p.adjust", showCategory=10) +
+  scale_x_continuous(labels = scales::label_scientific())
+ 
+```
+```{r functional}
+# 
+heatplot(results, showCategory=5)
+```
+
+## Chemicals
+
+```{r}
+# Load a bipartite igraph of chemical-gene interactions
+bigraph <- createIgraphFromNetwork("GeneRegulation")
+
+# Identify all chemical nodes in the graph
+chemical_nodes <- V(bigraph)[V(bigraph)$node_label == "Chemical"]
+
+# Retrieve the neighbors (genes associated) for each chemical node
+gene_sets <- lapply(chemical_nodes, function(node) {
+    neighbors(bigraph, node)
+})
+```
+
+```{r jaccard}
+# Jaccard distance matrix for the gene sets of all chemicals
+jaccard_distance_matrix <- matrix(0, nrow=length(gene_sets), ncol=length(gene_sets))
+for (i in 1:length(gene_sets)) {
+    for (j in i:length(gene_sets)) {
+        set1 <- gene_sets[[i]]
+        set2 <- gene_sets[[j]]
+        jaccard_coeff <- length(intersect(set1, set2)) / length(union(set1, set2))
+        jaccard_distance_matrix[i, j] <- 1 - jaccard_coeff
+        jaccard_distance_matrix[j, i] <- 1 - jaccard_coeff  # since it is a symmetric matrix
+    }
+}
+```
+
+```{r overlap}
+# Overlap coefficient for the gene sets of all chemicals
+overlap_coefficient_matrix <- matrix(0, nrow=length(gene_sets), ncol=length(gene_sets))
+for (i in 1:length(gene_sets)) {
+    for (j in i:length(gene_sets)) {
+        set1 <- gene_sets[[i]]
+        set2 <- gene_sets[[j]]
+        overlap_coeff <- length(intersect(set1, set2)) / min(length(set1), length(set2))
+        overlap_coefficient_matrix[i, j] <- overlap_coeff
+        overlap_coefficient_matrix[j, i] <- overlap_coeff  # since it is a symmetric matrix
+    }
+}
+```
+
+```{r similarity}
+ichem <- graph_from_adjacency_matrix(overlap_coefficient_matrix, mode = "undirected", weighted = TRUE)
+
+chemical_names <- names(gene_sets)
+V(ichem)$name <- chemical_names
+
+createNetworkFromIgraph(ichem, title="Chemicogenomic Similarity--Full Network")
+```
+
+## Publication Trends on PubMed
+
+```{r pmc}
+terms <- edo$Description[1:5]
+pmcplot(terms, 2010:2020, proportion=FALSE)
+```
+
