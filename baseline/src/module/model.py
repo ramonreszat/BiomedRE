@@ -176,7 +176,7 @@ class Model(nn.Module):
         bilin = torch.matmul(
             torch.reshape(lin, [batchsize, text_length *
                           (self.num_rel + 1), self.dim]),
-            torch.transpose(e2_vec, 1, 2)
+            torch.transpose(e2_vec, 1, 2) # argument #2 'mat2' is on CPU
         )
 
         output = torch.reshape(
